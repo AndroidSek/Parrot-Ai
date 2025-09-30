@@ -1,0 +1,193 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Parrot Ai — Vercel</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#343541; --panel:#202225; --muted:#c1c6d0;
+  --accent:#10a37f; --accent-2:#7c3aed;
+  --user-bubble:#0b1220; --bot-bubble:rgba(255,255,255,0.03);
+  --max-width:920px; --transition:180ms;
+}
+*{box-sizing:border-box}
+html,body{height:100%;margin:0;background:var(--bg);font-family:Inter,system-ui,-apple-system,'Segoe UI',Roboto,'Helvetica Neue',Arial;color:var(--muted)}
+body{display:flex;justify-content:center;padding:env(safe-area-inset-top,12px) 12px 20px 12px;min-height:100vh}
+.app{width:100%;max-width:var(--max-width);display:flex;flex-direction:column;height:100vh}
+.header{display:flex;align-items:center;padding:12px 14px;gap:12px}
+.title{flex:1;text-align:center;font-weight:600}
+.controls{display:flex;gap:8px}
+.main{flex:1;display:flex;flex-direction:column;background:var(--panel);border-radius:12px;overflow:hidden;box-shadow:0 12px 36px rgba(0,0,0,0.45)}
+.messages{flex:1;overflow:auto;padding:16px;display:flex;flex-direction:column;gap:12px;scroll-behavior:smooth}
+.row{display:flex;gap:10px;align-items:flex-start;opacity:0;transform:translateY(6px);transition:opacity .24s ease,transform .28s ease}
+.row.show{opacity:1;transform:none}
+.row.user{justify-content:flex-end}
+.avatar{width:36px;height:36px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-weight:700;color:#fff;flex-shrink:0}
+.avatar.bot{background:linear-gradient(135deg,var(--accent-2),var(--accent))}
+.avatar.user{background:#23272b}
+.bubble{max-width:78%;padding:12px 14px;border-radius:12px;line-height:1.45;white-space:pre-wrap;word-break:break-word;position:relative}
+.bubble.user{background:var(--user-bubble);color:#dbe7f2}
+.bubble.bot{background:var(--bot-bubble);color:#e6eef6}
+.copy-btn{position:absolute;right:8px;top:8px;background:rgba(0,0,0,0.28);border:0;color:#fff;padding:6px 8px;border-radius:6px;cursor:pointer;font-size:12px;opacity:1}
+.controls .theme{background:transparent;border:0;color:var(--muted);cursor:pointer}
+.composer{display:flex;gap:8px;padding:12px;border-top:1px solid rgba(255,255,255,0.03);background:linear-gradient(180deg,transparent,rgba(0,0,0,0.02))}
+.text{flex:1;border-radius:10px;border:1px solid rgba(255,255,255,0.03);padding:12px;background:#0f1113;color:var(--muted);min-height:56px;resize:none}
+.send{background:linear-gradient(180deg,var(--accent-2),var(--accent));border:0;color:#fff;padding:10px 14px;border-radius:10px;cursor:pointer}
+.footer{padding:10px;text-align:center;color:#94a3b8;font-size:13px}
+
+/* mobile */
+@media (max-width:720px){
+  .messages{padding:12px}
+  .avatar{width:32px;height:32px;font-size:13px}
+  .title{font-size:15px}
+}
+</style>
+</head>
+<body>
+<div class="app" id="app">
+  <header class="header">
+    <div class="title">Parrot Ai</div>
+    <div class="controls">
+      <button id="themeBtn" class="theme">🌙</button>
+    </div>
+  </header>
+
+  <main class="main">
+    <div class="messages" id="messages" aria-live="polite"></div>
+
+    <div class="composer">
+      <textarea id="input" class="text" placeholder="Escreva sua mensagem..." aria-label="Mensagem"></textarea>
+      <button id="send" class="send">Enviar</button>
+    </div>
+  </main>
+
+  <div class="footer">Criado por Ismael Santana — Todos os Direitos Reservados</div>
+</div>
+
+<script>
+const messagesEl = document.getElementById('messages');
+const inputEl = document.getElementById('input');
+const sendBtn = document.getElementById('send');
+const themeBtn = document.getElementById('themeBtn');
+
+function escapeHTML(s){ return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+
+// Markdown minimal (code, bold, italic, links, lists)
+function renderMarkdown(md){
+  if(md==null) return '';
+  let t = String(md);
+  t = t.replace(/\r\n/g,'\n');
+  const blocks = [];
+  t = t.replace(/```([\s\S]*?)```/g, (m,c)=>{ blocks.push('<pre>'+escapeHTML(c)+'</pre>'); return `\x00B${blocks.length-1}\x00`; });
+  t = escapeHTML(t);
+  t = t.replace(/`([^`]+)`/g,'<code>$1</code>');
+  t = t.replace(/\*\*(.*?)\*\*/g,'<strong>$1</strong>');
+  t = t.replace(/\*(.*?)\*/g,'<em>$1</em>');
+  t = t.replace(/\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g,'<a href="$2" target="_blank" rel="noreferrer noopener" style="color:var(--accent-2)">$1</a>');
+  const lines = t.split('\n');
+  let out=[], inList=false, listType='ul';
+  for(let ln of lines){
+    if(/^\s*[-*]\s+/.test(ln)){
+      if(!inList){ inList=true; out.push('<ul>'); }
+      out.push('<li>'+ln.replace(/^\s*[-*]\s+/,'')+'</li>');
+    } else if(/^\s*\d+\.\s+/.test(ln)){
+      if(!inList){ inList=true; out.push('<ol>'); listType='ol'; }
+      out.push('<li>'+ln.replace(/^\s*\d+\.\s+/,'')+'</li>');
+    } else {
+      if(inList){ out.push(listType==='ul'?'</ul>':'</ol>'); inList=false; listType='ul'; }
+      out.push(ln);
+    }
+  }
+  if(inList) out.push(listType==='ul'?'</ul>':'</ol>');
+  t = out.join('\n');
+  t = t.replace(/\x00B(\d+)\x00/g, (m,i)=>blocks[i]||'');
+  t = t.replace(/\n{2,}/g,'</p><p>');
+  t = t.replace(/\n/g,'<br>');
+  if(!/^<p>/.test(t)) t = '<p>'+t+'</p>';
+  return t;
+}
+
+function addCopyToPre(container){
+  container.querySelectorAll('pre').forEach(pre=>{
+    if(pre.querySelector('.copy-btn')) return;
+    const btn = document.createElement('button');
+    btn.className = 'copy-btn';
+    btn.textContent = 'Copiar';
+    btn.addEventListener('click', async (e)=>{
+      e.stopPropagation();
+      const text = pre.innerText;
+      try{ await navigator.clipboard.writeText(text); btn.textContent='Copiado'; setTimeout(()=>btn.textContent='Copiar',1200); }
+      catch(err){ const ta=document.createElement('textarea'); ta.value=text; document.body.appendChild(ta); ta.select(); document.execCommand('copy'); ta.remove(); btn.textContent='Copiado'; setTimeout(()=>btn.textContent='Copiar',1200); }
+    });
+    pre.style.position='relative';
+    pre.appendChild(btn);
+  });
+}
+
+function appendMessage(text, who='bot'){
+  const row = document.createElement('div'); row.className = 'row ' + (who==='user' ? 'user' : 'bot');
+  const av = document.createElement('div'); av.className='avatar ' + (who==='user' ? 'user' : 'bot'); av.textContent = who==='user' ? 'U' : 'P';
+  const bubble = document.createElement('div'); bubble.className='bubble ' + (who==='user' ? 'user' : 'bot');
+  bubble.innerHTML = renderMarkdown(text);
+  row.appendChild(av); row.appendChild(bubble);
+  messagesEl.appendChild(row);
+  requestAnimationFrame(()=>row.classList.add('show'));
+  addCopyToPre(bubble);
+  messagesEl.scrollTo({top: messagesEl.scrollHeight, behavior: 'smooth'});
+}
+
+function getHistory(){ try{ return JSON.parse(localStorage.getItem('parrot_history')||'[]'); }catch(e){return []} }
+function saveHistory(hist){ localStorage.setItem('parrot_history', JSON.stringify(hist)); }
+
+function loadHistoryToUI(){
+  const h = getHistory();
+  messagesEl.innerHTML = '';
+  for(const msg of h){ appendMessage(msg.content, msg.role); }
+}
+loadHistoryToUI();
+
+async function send(){
+  const text = inputEl.value.trim();
+  if(!text) return;
+  // save locally first
+  const hist = getHistory(); hist.push({role:'user', content:text, time:Date.now()}); saveHistory(hist);
+  appendMessage(text,'user');
+  inputEl.value=''; inputEl.focus();
+
+  // show typing
+  const typingRow = document.createElement('div'); typingRow.className='row bot';
+  const av = document.createElement('div'); av.className='avatar bot'; av.textContent='P';
+  const bubble = document.createElement('div'); bubble.className='bubble bot'; bubble.textContent='Pensando ';
+  const dots = document.createElement('span'); dots.textContent='...'; bubble.appendChild(dots);
+  typingRow.appendChild(av); typingRow.appendChild(bubble);
+  messagesEl.appendChild(typingRow); messagesEl.scrollTop = messagesEl.scrollHeight;
+
+  try{
+    const resp = await fetch('/api/chat.php', {
+      method:'POST', headers:{'Accept':'application/json','Content-Type':'application/json'},
+      body: JSON.stringify({ message: text })
+    });
+    const data = await resp.json();
+    typingRow.remove();
+    const reply = (data && data.reply) ? data.reply : ('Erro na API');
+    // save reply locally
+    const h2 = getHistory(); h2.push({role:'bot', content:reply, time:Date.now()}); saveHistory(h2);
+    appendMessage(reply,'bot');
+  }catch(e){
+    typingRow.remove();
+    appendMessage('Erro de comunicação: ' + e.message, 'bot');
+  }
+}
+
+sendBtn.addEventListener('click', send);
+inputEl.addEventListener('keydown', (e)=>{ if(e.key==='Enter' && !e.shiftKey){ e.preventDefault(); send(); } });
+
+// theme
+function applyTheme(t){ if(t==='light'){ document.documentElement.classList.add('light'); themeBtn.textContent='🌞'; localStorage.setItem('parrot_theme','light'); } else { document.documentElement.classList.remove('light'); themeBtn.textContent='🌙'; localStorage.setItem('parrot_theme','dark'); } }
+themeBtn.addEventListener('click', ()=>{ const cur = localStorage.getItem('parrot_theme')||'dark'; applyTheme(cur==='dark'?'light':'dark'); });
+applyTheme(localStorage.getItem('parrot_theme')||'dark');
+</script>
+</body>
+</html>
